@@ -707,6 +707,9 @@ impl Authenticator {
     /// Require a principal with `write` for git push / LFS upload / repo create.
     pub async fn require_write(&self, headers: &HeaderMap) -> Result<Principal, AuthError> {
         let p = self.authenticate(headers).await?;
+        if p.anonymous {
+            return Err(AuthError::Unauthorized);
+        }
         if p.write {
             Ok(p)
         } else {

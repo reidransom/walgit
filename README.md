@@ -152,6 +152,11 @@ which stores the token in a file only the user can read, installs a tiny git cre
 answers `get` with `authtype=Bearer`, and on a real 401 `erase`s the token and says where a new one comes from),
 and configures HTTPS URI negotiation. `?repo=owner/name` clones right after.
 
+Push discovery and receive POST return `401` with `WWW-Authenticate: Bearer` for missing or invalid
+credentials, allowing Git to invoke its credential helper. Authenticated users without write permission
+receive `403`, including Git clients. Denied pushes never create repositories; anonymous read access
+does not grant write permission.
+
 ### Developing
 
 ```sh

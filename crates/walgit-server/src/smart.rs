@@ -45,6 +45,10 @@ pub async fn info_refs(
         st.auth.require_read(headers).await
     };
     if let Err(e) = auth_result {
+        // Discovery must preserve the same authentication statuses as receive POST.
+        if is_receive {
+            return Err(auth_err(e));
+        }
         // Git clients do not display 401/403 bodies, but they do print a pkt-line `ERR` message
         // ("fatal: remote error: ..."). Tell humans how to authenticate instead of leaving them
         // with "error 401" — but ONLY where a retry cannot help (the account is not allowed, the

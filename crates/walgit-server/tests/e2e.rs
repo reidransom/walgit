@@ -2284,6 +2284,179 @@ async fn public_lane_serves_only_the_installer_without_auth() -> TestResult {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn receive_pack_push_authenticates_with_command_scoped_bearer_helper() -> TestResult {
+    let server = Server::start_with_tweak(|c| {
+        c.server.auto_create_on_push = true;
+        c.server.auth.mode = walgit_config::AuthMode::Token;
+        c.server.auth.anonymous_read = false;
+        c.server.auth.tokens = vec![walgit_config::StaticToken {
+            principal: "writer".into(),
+            token: "push-token".into(),
+            token_env: None,
+            write: true,
+            admin: false,
+        }];
+    })
+    .await?;
+    assert_eq!(
+        reqwest::Client::new()
+            .put(server.repo_url("t", "helper-existing"))
+            .bearer_auth("push-token")
+            .send()
+            .await?
+            .status(),
+        201
+    );
+    let src = TestRepo::synthetic(2, 1)?;
+    let home = tempfile::tempdir()?;
+    let env_file = home.path().join("client.env");
+    std::fs::write(&env_file, "WALGIT_TOKEN='push-token'\n")?;
+    let helper = r#"!f() {
+        case "$1" in
+            get)
+                . "$WALGIT_ENV_FILE"
+                printf "capability[]=authtype\nauthtype=Bearer\ncredential=%s\nusername=token\npassword=%s\n\n" "$WALGIT_TOKEN" "$WALGIT_TOKEN"
+                ;;
+        esac
+    }; f"#;
+    let git_command = |args: &[&str]| {
+        let mut command = tokio::process::Command::new("git");
+        command
+            .current_dir(&*src)
+            .env("HOME", home.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("WALGIT_ENV_FILE", &env_file)
+            .args([
+                "-c",
+                "credential.helper=",
+                "-c",
+                &format!("credential.helper={helper}"),
+            ])
+            .args(args);
+        command
+    };
+    let expected = git_in(&src, &["rev-parse", "HEAD"])?;
+    for name in ["helper-existing", "helper-created-on-push"] {
+        let url = server.repo_url("t", name);
+        let push = git_command(&["push", &url, "HEAD:refs/heads/main"])
+            .output()
+            .await?;
+        assert!(
+            push.status.success(),
+            "{}",
+            String::from_utf8_lossy(&push.stderr)
+        );
+        let clone_dir = home.path().join(name);
+        let clone = git_command(&["clone", &url, clone_dir.to_str().unwrap()])
+            .output()
+            .await?;
+        assert!(
+            clone.status.success(),
+            "{}",
+            String::from_utf8_lossy(&clone.stderr)
+        );
+        assert_eq!(
+            git_in(&clone_dir, &["rev-parse", "HEAD"])?.trim(),
+            expected.trim()
+        );
+        git_in(&clone_dir, &["fsck", "--full"])?;
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn receive_pack_denials_preserve_http_status_and_do_not_create_repositories() -> TestResult {
+    let client = reqwest::Client::new();
+    for anonymous_read in [false, true] {
+        let server = Server::start_with_tweak(|c| {
+            c.server.auto_create_on_push = true;
+            c.server.auth.mode = walgit_config::AuthMode::Token;
+            c.server.auth.anonymous_read = anonymous_read;
+            c.server.auth.tokens = [("writer", true), ("reader", false)]
+                .into_iter()
+                .map(|(principal, write)| walgit_config::StaticToken {
+                    principal: principal.into(),
+                    token: principal.into(),
+                    token_env: None,
+                    write,
+                    admin: false,
+                })
+                .collect();
+        })
+        .await?;
+        for (name, token, expected) in [
+            ("missing", None, 401),
+            ("invalid", Some("invalid"), 401),
+            ("reader", Some("reader"), 403),
+        ] {
+            let url = server.repo_url("t", name);
+            for user_agent in ["contract-probe", "git/2.47.0"] {
+                for (method, suffix) in [
+                    (reqwest::Method::GET, "info/refs?service=git-receive-pack"),
+                    (reqwest::Method::POST, "git-receive-pack"),
+                ] {
+                    let mut request = client
+                        .request(method, format!("{url}/{suffix}"))
+                        .header("User-Agent", user_agent);
+                    if let Some(token) = token {
+                        request = request.bearer_auth(token);
+                    }
+                    let response = request.send().await?;
+                    assert_eq!(response.status(), expected, "{name} {user_agent} {suffix}");
+                    if expected == 401 {
+                        assert!(
+                            response.headers()["www-authenticate"]
+                                .to_str()?
+                                .starts_with("Bearer ")
+                        );
+                    } else {
+                        assert!(!response.headers().contains_key("www-authenticate"));
+                    }
+                }
+            }
+            assert_eq!(
+                client
+                    .get(format!("{}/t/{name}/api", server.base_url))
+                    .bearer_auth("writer")
+                    .send()
+                    .await?
+                    .status(),
+                404
+            );
+        }
+        assert_eq!(
+            client
+                .put(server.repo_url("t", "readable"))
+                .bearer_auth("writer")
+                .send()
+                .await?
+                .status(),
+            201
+        );
+        let discovery = format!(
+            "{}/info/refs?service=git-upload-pack",
+            server.repo_url("t", "readable")
+        );
+        assert_eq!(
+            client
+                .get(&discovery)
+                .bearer_auth("reader")
+                .send()
+                .await?
+                .status(),
+            200
+        );
+        assert_eq!(
+            client.get(&discovery).send().await?.status(),
+            if anonymous_read { 200 } else { 401 }
+        );
+    }
+    Ok(())
+}
+
 /// A stale credential in git's cache (an expired or rotated token) must cost exactly one failed
 /// command: the server answers the dead token with a real 401, git `erase`s it from its helpers,
 /// and the next command asks the helpers again (a fresh token) and succeeds. A 200 + in-band ERR

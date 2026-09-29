@@ -87,9 +87,10 @@ machines whose "disk" is 20 GiB of tmpfs, next to a long tail of small repositor
 - Open at the application (no credential): `/healthz`, `/readyz`, `/repos.js`, `/repos.mjs`, `/_auth/*` (the
   sign-in flow itself) and **`/services/public/*`** (data-free; today `install.sh` + `ca.pem`; everything else
   under it 404; never reads repo data or takes a bearer — test `public_lane_serves_only_the_installer_without_auth`).
-- **The server answers an invalid/expired credential with a real 401** — that is what makes git `erase` it from
-  its helpers and ask again; the friendly 200 + in-band ERR is reserved for failures a retry cannot fix (account
-  not allowed, verifier down). A 200 leaves git re-storing a dead token for its cache's lifetime.
+- **The server answers a missing write credential or invalid/expired credential with a real 401** — git
+  requests credentials or `erase`s a stale one from its helpers and asks again. Receive-pack discovery and
+  POST preserve HTTP auth statuses: 401 unauthenticated, 403 authenticated without write, 503 verifier down.
+  Only read discovery retains friendly 200 + in-band ERR for failures a retry cannot fix.
 - **An edge announces what it took over, per request, in `X-Walgit-Capabilities`** (D39): `client-authorization`
   (the client's bearer travels in `X-Walgit-Authorization`; `Authorization` is the hop's own credential and is
   never read as the client's) and `accel-redirect` (static bytes by `X-Accel-Redirect`, honoured only when
@@ -486,6 +487,12 @@ full cold-read/resource acceptance gates listed in `docs/spec/README.md`.
   current tip must appear in the resulting live inventory before the log claim/CAS. Raw producer admission
   and candidate external-boundary proof remain separate obligations; local loose objects and retired
   download membership cannot justify retirement. See the cost and remaining-evidence rows in the linked docs.
+
+- **D50 (2026-09-29): Challenge anonymous writes; preserve receive-pack HTTP denials.** The write gate
+  distinguishes an anonymous principal (401) from an authenticated non-writer (403). Receive discovery
+  uses the same HTTP error mapping as receive POST, even for Git user agents; it must not disguise a
+  permission denial as HTTP 200. Normal command-scoped Bearer helpers can then authenticate push after
+  the challenge, including create-on-push, without preemptive headers. Read discovery policy is unchanged.
 
 ## 5. Working rules
 
