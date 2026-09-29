@@ -260,8 +260,10 @@ Sorted, `[]` for an unknown/empty owner (200, not 404). Cache: SWR.
 
 Ref-level summary: head (`null` when unborn), O(1) ref counts from the ref
 index, URLs. `404` for an unknown repo. Cache: SWR + `ETag: "<head sha>"`.
-`PUT` creates the repository (write permission; `201`/`200`), `DELETE`
-removes it (admin permission) — the same handlers as `PUT|DELETE /{owner}/{repo}`.
+`PUT` creates the repository (write permission): `201` only for a new name,
+`409` for an existing empty or populated repository, including cached and concurrent requests.
+Conflicts leave its refs, object format and settings unchanged. `DELETE` removes it
+(admin permission) — the same handlers as `PUT|DELETE /{owner}/{repo}`.
 `GET|PUT|DELETE …/policy` is the push policy document (`docs/POLICY.md`).
 
 `GET|PUT|DELETE /{o}/{r}/api/settings` (D24, 2026-08-21) is the repository's **settings in the WAL**: a TOML document

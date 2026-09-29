@@ -261,6 +261,120 @@ async fn dangling_head_clone_and_ls_remote() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_create_conflicts_without_changing_existing_repository() -> TestResult {
+    let server = Server::start().await?;
+    let client = reqwest::Client::new();
+    let url = server.repo_url("t", "create-only");
+    assert_eq!(client.put(&url).send().await?.status(), 201);
+    assert_eq!(client.put(&url).send().await?.status(), 409);
+
+    let cold = server.start_sibling_with(|_| {}).await?;
+    assert_eq!(
+        client
+            .put(cold.repo_url("t", "create-only"))
+            .send()
+            .await?
+            .status(),
+        409
+    );
+
+    let src = TestRepo::synthetic(1, 1)?;
+    git_in(&src, &["push", &url, "HEAD:refs/heads/main"])?;
+    let settings_url = format!("{}/t/create-only/api/settings", server.base_url);
+    assert_eq!(
+        client
+            .put(&settings_url)
+            .body("[maintenance]\ncheckpoints = false\n")
+            .send()
+            .await?
+            .status(),
+        200
+    );
+    let settings: serde_json::Value = client.get(&settings_url).send().await?.json().await?;
+    for instance in [&server, &cold] {
+        assert_eq!(
+            client
+                .put(format!(
+                    "{}?object_format=sha256",
+                    instance.repo_url("t", "create-only")
+                ))
+                .send()
+                .await?
+                .status(),
+            409
+        );
+    }
+    let after: serde_json::Value = client.get(&settings_url).send().await?.json().await?;
+    assert_eq!(after, settings);
+
+    let clone = tempfile::tempdir()?;
+    git(
+        &["clone", &url, clone.path().to_str().unwrap()],
+        clone.path().parent().unwrap(),
+    )?;
+    assert_eq!(
+        git_in(clone.path(), &["rev-parse", "--show-object-format"])?.trim(),
+        "sha1"
+    );
+    assert_eq!(
+        git_in(clone.path(), &["rev-parse", "HEAD"])?.trim(),
+        git_in(&src, &["rev-parse", "HEAD"])?.trim()
+    );
+    git_in(clone.path(), &["fsck", "--full"])?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_creation_distinguishes_create_only_from_open_or_create() -> TestResult {
+    let mut store = walgit_store::memory::MemoryStore::new();
+    store.latency = Some(std::time::Duration::from_millis(25));
+    let server = Server::start_with_store_and_tweak(std::sync::Arc::new(store), |c| {
+        c.server.auto_create_on_push = true;
+    })
+    .await?;
+    let sibling = server
+        .start_sibling_with(|c| c.server.auto_create_on_push = true)
+        .await?;
+    let client = reqwest::Client::new();
+    for instances in [1, 2] {
+        for explicit in [true, false] {
+            let name = format!("contend-{instances}-{explicit}");
+            let requests = (0..8).map(|i| {
+                let instance = if instances == 2 && i % 2 == 1 {
+                    &sibling
+                } else {
+                    &server
+                };
+                let url = instance.repo_url("t", &name);
+                if explicit {
+                    client.put(url)
+                } else {
+                    client.get(format!("{url}/info/refs?service=git-receive-pack"))
+                }
+                .send()
+            });
+            let responses = futures::future::try_join_all(requests).await?;
+            let statuses: Vec<_> = responses.iter().map(reqwest::Response::status).collect();
+            if explicit {
+                assert_eq!(
+                    statuses.iter().filter(|&&s| s == 201).count(),
+                    1,
+                    "{statuses:?}"
+                );
+                assert_eq!(
+                    statuses.iter().filter(|&&s| s == 409).count(),
+                    7,
+                    "{statuses:?}"
+                );
+            } else {
+                assert!(statuses.iter().all(|&s| s == 200), "{statuses:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admin_create_list_delete() -> TestResult {
     let server = Server::start().await?;
     server.put_repo("t", "r").await?;

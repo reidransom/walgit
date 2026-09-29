@@ -168,8 +168,9 @@ impl Registry {
   pub fn new(store: DynStore, cfg: Arc<walgit_config::Config>) -> Arc<Self>;
   /// Open existing (materialize local copy lazily). Err(WalError::NotFound) if manifest.pb absent.
   pub async fn open(&self, id: &RepoId) -> Result<Arc<RepoHandle>, WalError>;
-  /// CAS-create manifest.pb (PutMode::Create). Err(WalError::AlreadyExists).
+  /// Strict CAS-create manifest.pb (PutMode::Create), including cached names. Err(WalError::AlreadyExists).
   pub async fn create(&self, id: &RepoId, format: ObjectFormat) -> Result<Arc<RepoHandle>, WalError>;
+  /// Intentional open-or-create: open the winner after a concurrent create conflict.
   pub async fn open_or_create(&self, id: &RepoId, format: ObjectFormat) -> Result<Arc<RepoHandle>, WalError>;
   pub async fn list(&self) -> Result<Vec<RepoId>, WalError>;   // list "repos/" prefix (delimiter-less scan is ok v1)
   pub fn store(&self) -> &DynStore; pub fn config(&self) -> &Arc<Config>;

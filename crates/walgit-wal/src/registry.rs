@@ -193,21 +193,16 @@ impl Registry {
         Ok(())
     }
 
-    /// CAS-create manifest.pb (`PutMode::Create`). Err(AlreadyExists) on 412.
+    /// Strictly create manifest.pb (`PutMode::Create`); existing names return `AlreadyExists`.
     pub async fn create(
         &self,
         id: &RepoId,
         format: ObjectFormat,
     ) -> Result<Arc<RepoHandle>, WalError> {
-        if let Some(h) = self.repos.get(id) {
-            return Ok(h.clone());
-        }
         let gate = self.opening.entry(id.clone()).or_default().clone();
         let _g = gate.lock().await;
-        if let Some(h) = self.repos.get(id) {
-            return Ok(h.clone());
-        }
 
+        // The bucket decides existence, not a possibly stale cached handle.
         let prefix = id.store_prefix();
         let prefixed = Prefixed::new(self.store.clone(), prefix);
 
@@ -272,7 +267,7 @@ impl Registry {
         }
     }
 
-    /// Open or create.
+    /// Open or create, opening the winner if another caller creates first.
     pub async fn open_or_create(
         &self,
         id: &RepoId,
@@ -280,7 +275,10 @@ impl Registry {
     ) -> Result<Arc<RepoHandle>, WalError> {
         match self.open(id).await {
             Ok(h) => Ok(h),
-            Err(WalError::NotFound) => self.create(id, format).await,
+            Err(WalError::NotFound) => match self.create(id, format).await {
+                Err(WalError::AlreadyExists) => self.open(id).await,
+                result => result,
+            },
             Err(e) => Err(e),
         }
     }
