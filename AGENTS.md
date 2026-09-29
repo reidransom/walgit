@@ -534,3 +534,17 @@ full cold-read/resource acceptance gates listed in `docs/spec/README.md`.
   under the full e2e suite: base published without `has_commit_graph`) and
   `sim::base_rebuild_resumes_after_a_kill_between_any_two_phases` (~1 in 7, shared `TEST_ABORT_AFTER`). Both
   pass alone.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as Markdown files under `.scratch/<feature>/`. See `.scratch/agents/issue-tracker.md`.
+
+### Triage labels
+
+The canonical five triage roles use their default label strings. See `.scratch/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context layout. See `.scratch/agents/domain.md`.
