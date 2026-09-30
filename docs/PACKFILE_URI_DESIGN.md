@@ -155,9 +155,11 @@ the final publication retires inputs and establishes the complete replacement pr
 may contain old and new packs. Per-attempt closure checks reject new holes; pre-existing holes remain visible
 for repair. Scratch markers are disposable progress, not durable jobs or cross-host resume authority.
 
-Maintain a real MIDX bitmap for segmented native Git reuse and verify that a bitmap was produced. Set native
-`pack.allowPackReuse=multi`; a successful MIDX command or ordinary `true` setting is insufficient evidence.
-Side-files accelerate reads but never establish object existence by themselves.
+Maintain and verify a real MIDX bitmap for segmented native Git traversal. Do not enable
+`pack.allowPackReuse=multi`: Git 2.47 emitted incomplete clone packs from verified multi-pack
+inventories in production. Force `pack.allowPackReuse=false` on upload-pack, including cached
+repositories that already have the old local setting. Bitmap verification proves traversal,
+not correctness of multi-pack byte reuse. Side-files never establish object existence alone.
 
 ## 5. Fetch negotiation and engine guards
 

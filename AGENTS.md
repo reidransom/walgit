@@ -493,6 +493,14 @@ full cold-read/resource acceptance gates listed in `docs/spec/README.md`.
   uses the same HTTP error mapping as receive POST, even for Git user agents; it must not disguise a
   permission denial as HTTP 200. Normal command-scoped Bearer helpers can then authenticate push after
   the challenge, including create-on-push, without preemptive headers. Read discovery policy is unchanged.
+- **D51 (2026-09-30): Disable native multi-pack byte reuse for upload-pack.** Git 2.47 emitted
+  a pack with an unresolved delta from `reid/skills` and omitted a reachable blob from
+  `reid/pacificoem` after `pack.allowPackReuse=multi`; local pack verification, MIDX verification
+  and `git fsck --full` passed. The same cache copied without that setting cloned, and disabling
+  it on the production caches restored all three protected clones. Keep verified MIDX bitmaps,
+  but do not write the `multi` setting and force `false` on each stock-Git upload-pack invocation
+  so existing cached repositories cannot retain the unsafe setting. Re-enable only after a
+  reproducible Git fix and end-to-end clone verification on this pack graph.
 
 ## 5. Working rules
 

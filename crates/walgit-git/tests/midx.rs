@@ -47,10 +47,6 @@ async fn verifies_real_multi_pack_bitmap_and_rejects_missing_or_corrupt_bytes() 
             .await
             .unwrap();
         assert!(verified.bitmap_path.is_file());
-        assert_eq!(
-            common::run_git(repo.path(), &["config", "pack.allowPackReuse"]).trim(),
-            "multi"
-        );
         common::run_git(repo.path(), &["fsck", "--strict"]);
         let bytes = std::fs::read(&verified.bitmap_path).unwrap();
         std::fs::remove_file(&verified.bitmap_path).unwrap();

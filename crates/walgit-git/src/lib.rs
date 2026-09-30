@@ -2646,9 +2646,13 @@ impl LocalRepo {
             // sideband-all: the server advertises it so it can narrate before
             // the packfile section; upload-pack only honours the client's
             // request with this config (also set at init, -c covers old copies).
+            // Multi-pack reuse can omit bases from the generated pack on Git
+            // 2.47 even with a verified bitmap. Override old cache config too.
             .args([
                 "-c",
                 "uploadpack.allowSidebandAll=true",
+                "-c",
+                "pack.allowPackReuse=false",
                 "upload-pack",
                 "--stateless-rpc",
                 ".",

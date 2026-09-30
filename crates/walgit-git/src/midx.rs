@@ -199,14 +199,6 @@ impl LocalRepo {
                 ]),
                 None,
             )?;
-            checked(
-                Command::new("git").arg("-C").arg(repo.path()).args([
-                    "config",
-                    "pack.allowPackReuse",
-                    "multi",
-                ]),
-                None,
-            )?;
             repo.refresh()?;
             Ok(verified)
         })
