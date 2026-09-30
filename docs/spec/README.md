@@ -6,8 +6,13 @@ executable inventory is [tlc/cases.tsv](tlc/cases.tsv); a checked-in row is not 
 
 Run `just spec` for the matrix plus the bounded reference and its old-value negative control. Use
 `just spec-fragments` to omit those two reference runs, or `just spec-full` to add larger reference arms.
-Java 11 or newer, Bash, ripgrep, curl, a SHA-256 utility and GNU timeout are required. Defaults are two JVM
-jobs, two workers and 2 GiB heap per job. Full reference runs are serial with eight workers and 8 GiB.
+Java 11 or newer, Bash, Git, Ant, ripgrep and GNU timeout are required. On a cold run,
+`scripts/ensure-tla-tools.sh` shallow-fetches an exact upstream commit and builds TLC under `target/`;
+the resulting jar is cached by commit. Upstream's v1.8.0 pre-release asset is rolling, and its
+timestamped Maven snapshots expire, so neither is a durable binary pin. The compiled jar's bytes
+depend on the local JDK and build timestamp; the fixed source revision and model checks are the gate.
+Defaults are two JVM jobs, two workers and 2 GiB heap per job. Full reference runs are serial with
+eight workers and 8 GiB.
 Override `WALGIT_TLC_JOBS`, `WALGIT_TLC_WORKERS`, `WALGIT_TLC_HEAP` and `WALGIT_TLC_TIMEOUT` explicitly;
 the timeout defaults to 600 seconds per invocation. More jobs multiply the heap budget.
 

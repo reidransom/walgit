@@ -71,8 +71,7 @@ awk '
   { count++ }
   END { if (count == 0) exit 1 }
 ' docs/spec/tlc/cases.tsv
-scripts/ensure-tla-tools.sh
-jar="$root/target/tla2tools.jar"
+jar="$(scripts/ensure-tla-tools.sh)"
 work="$(mktemp -d "$root/target/tlc.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
