@@ -139,6 +139,18 @@ Roles (`server.roles`): `serve` (git, API, UI, LFS), `maintain` (checkpoints, co
 fsck/repair), `events` (the webhook bridge). Empty = all. Any number of `serve` hosts may point at one bucket; give
 each repository one maintainer (placement globs) and you are done.
 
+### GitHub releases
+
+After CI passes on the intended commit, tag it `v<workspace.package.version>` (for example,
+`v0.1.0`) and push the tag. `.github/workflows/release.yml` builds the web assets and both CLI
+binaries, exercises the packaged `walgit` against a memory-backed server with Git ≥ 2.47,
+and publishes a Linux x86-64 tarball and SHA-256 checksum to a GitHub release. The tarball
+includes `walgit`, `walgit-server`, `LICENSE`, `README.md`, and `walgit.example.toml`.
+The host still needs Git ≥ 2.47, git-lfs, and GNU coreutils for server operation; the tarball
+does not bundle them. Built on Ubuntu 24.04 and smoke-tested on Debian trixie; older Linux
+distributions are not qualified. The tag must match the Cargo workspace version or the job
+fails before building. This workflow does not publish an OCI image or qualify other platforms.
+
 ### Authentication
 
 | mode | who gets in | how git authenticates |
